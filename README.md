@@ -1,3 +1,9 @@
+---
+title: Chat With Repo
+sdk: docker
+app_port: 8080
+---
+
 # Chat With Any GitHub Repo (prototype)
 
 **Zero-cost setup:** embeddings run locally inside the app (all-MiniLM-L6-v2, no API). Chat uses the free Gemini API tier.
@@ -24,3 +30,4 @@ Run from IntelliJ instead: `docker compose up db`, set env var LLM_API_KEY, run 
 
 ## API
 POST /api/index {url} · GET /api/graph/{id} · POST /api/chat {repoId, question} · GET /api/impact/{id}?method=Class.method
+

@@ -8,6 +8,6 @@ RUN mvn -q package -DskipTests
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /app/target/chat-with-repo-0.1.0.jar app.jar
-ENV JAVA_TOOL_OPTIONS="-Xmx700m"
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=60"
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","app.jar"]
