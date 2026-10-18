@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Chat With Any GitHub Repo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<style>
+ body{margin:0;font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;flex-direction:column;height:100vh}
+ header{padding:10px 16px;display:flex;gap:8px;align-items:center;background:#1e293b}
+ header input{flex:1;padding:8px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:inherit}
+ button{padding:8px 14px;border:0;border-radius:6px;background:#3b82f6;color:#fff;cursor:pointer}
+ main{flex:1;display:flex;min-height:0}
+ #graph{flex:1;background:#0b1220}
+ #side{width:380px;display:flex;flex-direction:column;border-left:1px solid #334155}
+ #log{flex:1;overflow:auto;padding:12px;white-space:pre-wrap;font-size:14px}
+ .q{color:#93c5fd;margin-top:10px}.a{margin:4px 0 10px}
+ #ask{display:flex;gap:6px;padding:10px}#ask input{flex:1;padding:8px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:inherit}
+ #status{font-size:12px;color:#94a3b8;padding:0 16px 6px;background:#1e293b}
+ @media(max-width:800px){main{flex-direction:column}#side{width:auto;height:45%}}
+</style></head><body>
+<header><b>Chat With Any GitHub Repo</b>
+ <input id="url" placeholder="https://github.com/owner/java-repo">
+ <button onclick="indexRepo()">Index</button></header>
+<div id="status">Paste a public Java repo URL. Click a graph node to see its impact (red).</div>
+<main><svg id="graph"></svg>
+<div id="side"><div id="log"></div>
+ <div id="ask"><input id="q" placeholder="Where is login handled?" onkeydown="if(event.key==='Enter')ask()"><button onclick="ask()">Ask</button></div></div></main>
+<script>
+let repoId=null, nodeSel=null;
+const $=id=>document.getElementById(id), status=t=>$('status').textContent=t;
+async function api(path,opt){const r=await fetch(path,opt);const j=await r.json();if(j.error)throw new Error(j.error);return j}
+async function indexRepo(){
+  try{status('Cloning, parsing and embedding… (can take a minute)');
+    const r=await api('/api/index',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value.trim()})});
+    repoId=r.repoId;status(`Indexed ${r.methods} methods, ${r.edges} call edges.`);drawGraph(await api('/api/graph/'+repoId));
+  }catch(e){status('Error: '+e.message)}}
+async function ask(){
+  if(!repoId)return status('Index a repo first.');
+  const q=$('q').value;$('q').value='';$('log').innerHTML+=`<div class="q">${esc(q)}</div><div class="a" id="pending">Thinking…</div>`;
+  try{const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repoId,question:q})});
+    $('pending').textContent=r.answer;highlight(r.highlight,'#facc15')}
+  catch(e){$('pending').textContent='Error: '+e.message}
+  $('pending').removeAttribute('id');$('log').scrollTop=1e9}
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function highlight(ids,color){nodeSel&&nodeSel.attr('fill',d=>ids.includes(d.id)?color:'#64748b').attr('r',d=>ids.includes(d.id)?9:5)}
+function drawGraph(g){
+  const svg=d3.select('#graph');svg.selectAll('*').remove();
+  const w=svg.node().clientWidth,h=svg.node().clientHeight,root=svg.append('g');
+  svg.call(d3.zoom().on('zoom',e=>root.attr('transform',e.transform)));
+  const sim=d3.forceSimulation(g.nodes).force('link',d3.forceLink(g.links).id(d=>d.id).distance(40))
+    .force('charge',d3.forceManyBody().strength(-60)).force('center',d3.forceCenter(w/2,h/2));
+  const link=root.append('g').attr('stroke','#334155').selectAll('line').data(g.links).join('line');
+  nodeSel=root.append('g').selectAll('circle').data(g.nodes).join('circle').attr('r',5).attr('fill','#64748b')
+    .on('click',async(_,d)=>{const imp=await api(`/api/impact/${repoId}?method=${encodeURIComponent(d.id)}`);
+      highlight([d.id,...imp],'#ef4444');status(`${d.id} (${d.file}:${d.start}-${d.end}) — ${imp.length} methods affected`)});
+  nodeSel.append('title').text(d=>d.id);
+  sim.on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+    nodeSel.attr('cx',d=>d.x).attr('cy',d=>d.y)})}
+</script></body></html>
