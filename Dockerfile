@@ -10,6 +10,11 @@ FROM eclipse-temurin:17-jre
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 curl && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/target/chat-with-repo-0.1.0.jar app.jar
-ENV JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -Xms64m -Xmx220m -XX:MaxMetaspaceSize=112m -XX:ReservedCodeCacheSize=48m -Xss512k"
+ENV DJL_CACHE_DIR=/tmp/djl-cache
+ENV HF_HOME=/tmp/hf-cache
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -Xms32m -Xmx128m -XX:MaxMetaspaceSize=80m -XX:ReservedCodeCacheSize=32m -Xss256k"
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","app.jar"]
