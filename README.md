@@ -2,7 +2,7 @@
 title: Chat With Repo
 emoji: 💬
 colorFrom: gray
-colorTo: black
+colorTo: gray
 sdk: docker
 app_port: 8080
 ---
