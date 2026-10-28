@@ -1,57 +1,521 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>Chat With Any GitHub Repo</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<style>
- body{margin:0;font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;flex-direction:column;height:100vh}
- header{padding:10px 16px;display:flex;gap:8px;align-items:center;background:#1e293b}
- header input{flex:1;padding:8px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:inherit}
- button{padding:8px 14px;border:0;border-radius:6px;background:#3b82f6;color:#fff;cursor:pointer}
- main{flex:1;display:flex;min-height:0}
- #graph{flex:1;background:#0b1220}
- #side{width:380px;display:flex;flex-direction:column;border-left:1px solid #334155}
- #log{flex:1;overflow:auto;padding:12px;white-space:pre-wrap;font-size:14px}
- .q{color:#93c5fd;margin-top:10px}.a{margin:4px 0 10px}
- #ask{display:flex;gap:6px;padding:10px}#ask input{flex:1;padding:8px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:inherit}
- #status{font-size:12px;color:#94a3b8;padding:0 16px 6px;background:#1e293b}
- @media(max-width:800px){main{flex-direction:column}#side{width:auto;height:45%}}
-</style></head><body>
-<header><b>Chat With Any GitHub Repo</b>
- <input id="url" placeholder="https://github.com/owner/java-repo">
- <button onclick="indexRepo()">Index</button></header>
-<div id="status">Paste a public Java repo URL. Click a graph node to see its impact (red).</div>
-<main><svg id="graph"></svg>
-<div id="side"><div id="log"></div>
- <div id="ask"><input id="q" placeholder="Where is login handled?" onkeydown="if(event.key==='Enter')ask()"><button onclick="ask()">Ask</button></div></div></main>
-<script>
-let repoId=null, nodeSel=null;
-const $=id=>document.getElementById(id), status=t=>$('status').textContent=t;
-async function api(path,opt){const r=await fetch(path,opt);const j=await r.json();if(j.error)throw new Error(j.error);return j}
-async function indexRepo(){
-  try{status('Cloning, parsing and embedding… (can take a minute)');
-    const r=await api('/api/index',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value.trim()})});
-    repoId=r.repoId;status(`Indexed ${r.methods} methods, ${r.edges} call edges.`);drawGraph(await api('/api/graph/'+repoId));
-  }catch(e){status('Error: '+e.message)}}
-async function ask(){
-  if(!repoId)return status('Index a repo first.');
-  const q=$('q').value;$('q').value='';$('log').innerHTML+=`<div class="q">${esc(q)}</div><div class="a" id="pending">Thinking…</div>`;
-  try{const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repoId,question:q})});
-    $('pending').textContent=r.answer;highlight(r.highlight,'#facc15')}
-  catch(e){$('pending').textContent='Error: '+e.message}
-  $('pending').removeAttribute('id');$('log').scrollTop=1e9}
-const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-function highlight(ids,color){nodeSel&&nodeSel.attr('fill',d=>ids.includes(d.id)?color:'#64748b').attr('r',d=>ids.includes(d.id)?9:5)}
-function drawGraph(g){
-  const svg=d3.select('#graph');svg.selectAll('*').remove();
-  const w=svg.node().clientWidth,h=svg.node().clientHeight,root=svg.append('g');
-  svg.call(d3.zoom().on('zoom',e=>root.attr('transform',e.transform)));
-  const sim=d3.forceSimulation(g.nodes).force('link',d3.forceLink(g.links).id(d=>d.id).distance(40))
-    .force('charge',d3.forceManyBody().strength(-60)).force('center',d3.forceCenter(w/2,h/2));
-  const link=root.append('g').attr('stroke','#334155').selectAll('line').data(g.links).join('line');
-  nodeSel=root.append('g').selectAll('circle').data(g.nodes).join('circle').attr('r',5).attr('fill','#64748b')
-    .on('click',async(_,d)=>{const imp=await api(`/api/impact/${repoId}?method=${encodeURIComponent(d.id)}`);
-      highlight([d.id,...imp],'#ef4444');status(`${d.id} (${d.file}:${d.start}-${d.end}) — ${imp.length} methods affected`)});
-  nodeSel.append('title').text(d=>d.id);
-  sim.on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
-    nodeSel.attr('cx',d=>d.x).attr('cy',d=>d.y)})}
-</script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Apple-grade Java Codebase Intelligence, Interactive Call Graph, and GraphRAG Assistant">
+  <meta name="theme-color" content="#0a0c10">
+  <title>RepoChat — Apple-Grade Java Code Intelligence & GraphRAG</title>
+
+  <!-- Typography & CDN Dependencies -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Background Glow & Grid Canvas Elements -->
+  <div class="ambient-glow glow-top-left"></div>
+  <div class="ambient-glow glow-bottom-right"></div>
+
+  <div id="app" class="app-container">
+    <!-- Top Apple Pro Navigation Bar -->
+    <header class="pro-header">
+      <div class="header-left">
+        <div class="window-controls" aria-hidden="true">
+          <span class="control-dot dot-red"></span>
+          <span class="control-dot dot-yellow"></span>
+          <span class="control-dot dot-green"></span>
+        </div>
+        <div class="brand-lockup">
+          <div class="brand-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-title">RepoChat</span>
+            <span class="brand-tag">GraphRAG Studio</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center Repository Ingestion Bar -->
+      <div class="header-center">
+        <div class="repo-input-wrapper">
+          <div class="input-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+            </svg>
+          </div>
+          <input 
+            type="url" 
+            id="url" 
+            placeholder="https://github.com/owner/java-repository" 
+            autocomplete="off" 
+            spellcheck="false"
+          >
+          <div class="sample-repos-menu">
+            <button class="ghost-btn sample-toggle-btn" id="sample-toggle-btn" title="Choose a curated Java repository">
+              <span>Samples</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="sample-dropdown" id="sample-dropdown">
+              <div class="dropdown-header">Verified Java Repositories</div>
+              <button class="sample-option" data-url="https://github.com/spring-projects/spring-petclinic">
+                <span class="option-title">Spring PetClinic</span>
+                <span class="option-desc">Official Spring Boot reference sample</span>
+              </button>
+              <button class="sample-option" data-url="https://github.com/square/okhttp">
+                <span class="option-title">Square OkHttp</span>
+                <span class="option-desc">High-performance HTTP client</span>
+              </button>
+              <button class="sample-option" data-url="https://github.com/google/guava">
+                <span class="option-title">Google Guava</span>
+                <span class="option-desc">Core libraries for Java</span>
+              </button>
+              <button class="sample-option" data-url="https://github.com/iluwatar/java-design-patterns">
+                <span class="option-title">Java Design Patterns</span>
+                <span class="option-desc">Comprehensive OOP patterns repository</span>
+              </button>
+            </div>
+          </div>
+          <button id="btn-index" class="primary-btn" onclick="indexRepo()">
+            <span class="btn-spinner" id="index-spinner"></span>
+            <span class="btn-label" id="index-btn-label">Analyze Repo</span>
+            <kbd class="shortcut-kbd">↵</kbd>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Pro Status & Metrics -->
+      <div class="header-right">
+        <div id="status-pill" class="status-pill status-idle">
+          <span class="status-dot"></span>
+          <span id="status-text" class="status-text">Ready for repository</span>
+        </div>
+
+        <div id="metrics-group" class="metrics-group hidden">
+          <div class="metric-pill" title="Indexed Java Methods">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span id="metric-methods">0</span>
+            <span class="metric-unit">methods</span>
+          </div>
+          <div class="metric-pill" title="Discovered Call Graph Invocations">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+            <span id="metric-edges">0</span>
+            <span class="metric-unit">edges</span>
+          </div>
+        </div>
+
+        <button class="icon-btn" id="btn-intern-guide" title="Intern Quick Guide & Shortcuts">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Split-Pane -->
+    <main class="pro-workspace">
+      <!-- Left: Interactive Call Graph Canvas -->
+      <section class="canvas-panel" id="canvas-panel">
+        <svg id="graph" class="graph-svg"></svg>
+
+        <!-- Floating Glass Graph HUD Controls -->
+        <div class="graph-hud">
+          <!-- Quick Spotlight Method Search -->
+          <div class="hud-search-wrapper">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="text" id="graph-search" placeholder="Search methods or classes in graph..." autocomplete="off">
+            <kbd class="hud-kbd">⌘K</kbd>
+          </div>
+
+          <!-- Zoom & Layout Controls -->
+          <div class="hud-btn-group">
+            <button class="hud-btn" id="btn-zoom-in" title="Zoom in">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <button class="hud-btn" id="btn-zoom-out" title="Zoom out">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <button class="hud-btn" id="btn-zoom-fit" title="Fit whole graph to screen">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+            </button>
+            <button class="hud-btn" id="btn-physics-toggle" title="Pause / unpause force simulation">
+              <svg id="physics-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+            </button>
+            <button class="hud-btn" id="btn-reset-highlights" title="Clear highlights & impact view">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+            </button>
+          </div>
+
+          <!-- Color Legend Pill -->
+          <div class="hud-legend">
+            <span class="legend-item"><span class="legend-color color-node"></span>Method</span>
+            <span class="legend-item"><span class="legend-color color-query"></span>Query Hit</span>
+            <span class="legend-item"><span class="legend-color color-impact"></span>Blast Radius</span>
+            <span class="legend-item"><span class="legend-color color-edge"></span>Call Edge</span>
+          </div>
+        </div>
+
+        <!-- Empty State Hero Card (Visible before index) -->
+        <div id="canvas-hero" class="canvas-hero">
+          <div class="hero-card">
+            <div class="hero-badge">Apple Design Architecture</div>
+            <h1 class="hero-title">Intelligent Java Architecture & GraphRAG</h1>
+            <p class="hero-subtitle">
+              Engineered for interns and senior architects alike. Parse AST syntax trees, map cross-method call topologies, analyze blast radiuses, and ask deep questions grounded by citations.
+            </p>
+
+            <div class="quick-start-section">
+              <span class="quick-start-label">Select a curated repository to explore:</span>
+              <div class="quick-repo-chips">
+                <button class="repo-chip" onclick="selectSampleRepo('https://github.com/spring-projects/spring-petclinic')">
+                  <span class="chip-dot"></span>
+                  <span class="chip-name">spring-petclinic</span>
+                  <span class="chip-badge">Spring Boot</span>
+                </button>
+                <button class="repo-chip" onclick="selectSampleRepo('https://github.com/square/okhttp')">
+                  <span class="chip-dot"></span>
+                  <span class="chip-name">okhttp</span>
+                  <span class="chip-badge">Client</span>
+                </button>
+                <button class="repo-chip" onclick="selectSampleRepo('https://github.com/google/guava')">
+                  <span class="chip-dot"></span>
+                  <span class="chip-name">guava</span>
+                  <span class="chip-badge">Google</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="hero-features-grid">
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg>
+                </div>
+                <h3>D3 Interactive Call Graph</h3>
+                <p>Real-time force simulation mapping method invocations and caller-callee relationships.</p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                </div>
+                <h3>Blast Radius Impact</h3>
+                <p>Click any method node to compute transitive caller impact across the codebase in crimson red.</p>
+              </div>
+              <div class="feature-box">
+                <div class="feature-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                </div>
+                <h3>Grounded Citations</h3>
+                <p>AI answers with verified file and line range pills. Click any citation to zoom directly to code.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Processing Progress Overlay -->
+        <div id="indexing-overlay" class="indexing-overlay hidden">
+          <div class="indexing-card">
+            <div class="spinner-apple">
+              <div class="apple-spin-blade"></div>
+              <div class="apple-spin-blade"></div>
+              <div class="apple-spin-blade"></div>
+              <div class="apple-spin-blade"></div>
+              <div class="apple-spin-blade"></div>
+              <div class="apple-spin-blade"></div>
+              <div class="apple-spin-blade"></div>
+              <div class="apple-spin-blade"></div>
+            </div>
+            <h2 class="indexing-title">Indexing Codebase</h2>
+            <p class="indexing-caption" id="indexing-caption">Cloning repository, analyzing AST syntax, and generating vector embeddings...</p>
+            
+            <div class="pipeline-progress-bar">
+              <div class="progress-bar-fill indeterminate"></div>
+            </div>
+
+            <div class="pipeline-steps">
+              <div class="step-item step-done">
+                <span class="step-check">✓</span>
+                <span class="step-label">Git Shallow Clone</span>
+              </div>
+              <div class="step-item step-active">
+                <span class="step-dot"></span>
+                <span class="step-label">JavaParser AST & Method Invocations</span>
+              </div>
+              <div class="step-item">
+                <span class="step-dot"></span>
+                <span class="step-label">All-MiniLM Vector Chunks (pgvector)</span>
+              </div>
+              <div class="step-item">
+                <span class="step-dot"></span>
+                <span class="step-label">Topological Call Graph Matrix</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive Node Tooltip Card -->
+        <div id="node-tooltip" class="node-tooltip">
+          <div class="tooltip-header">
+            <span class="tooltip-class" id="tt-class">ClassName</span>
+            <span class="tooltip-badge">Method</span>
+          </div>
+          <div class="tooltip-method" id="tt-method">methodName()</div>
+          <div class="tooltip-file" id="tt-file">src/main/java/...</div>
+          <div class="tooltip-footer">
+            <span class="tooltip-lines" id="tt-lines">Lines 1 - 20</span>
+            <span class="tooltip-hint">Click node for blast radius</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Apple Glass Pro Studio Sidebar -->
+      <aside class="sidebar-panel" id="sidebar-panel">
+        <!-- Segmented Control Navigation -->
+        <div class="sidebar-tabs-wrapper">
+          <div class="segmented-control" role="tablist">
+            <button class="segment-btn active" id="tab-btn-chat" data-tab="chat" role="tab" aria-selected="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+              <span>AI Chat</span>
+            </button>
+            <button class="segment-btn" id="tab-btn-inspector" data-tab="inspector" role="tab" aria-selected="false">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              <span>Inspector</span>
+            </button>
+            <button class="segment-btn" id="tab-btn-catalog" data-tab="catalog" role="tab" aria-selected="false">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+              <span>Catalog</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 1: AI Assistant Pane -->
+        <div class="tab-pane active" id="pane-chat">
+          <div class="chat-history" id="chat-history">
+            <!-- Initial Guidance Welcome Card -->
+            <div class="chat-welcome-card">
+              <div class="welcome-header">
+                <div class="welcome-sparkle">✦</div>
+                <div class="welcome-title">GraphRAG Code Intelligence</div>
+              </div>
+              <p class="welcome-desc">
+                Ask architectural questions about the indexed repository. Responses are cross-referenced with vector similarity and call-graph caller/callee neighborhoods.
+              </p>
+              <div class="welcome-chips-title">Sample inquiries:</div>
+              <div class="suggested-queries">
+                <button class="query-chip" onclick="askPreset('Where is user authentication or security configured?')">
+                  "Where is user authentication or security configured?"
+                </button>
+                <button class="query-chip" onclick="askPreset('Explain the core controllers and their main entry points.')">
+                  "Explain the core controllers and their main entry points."
+                </button>
+                <button class="query-chip" onclick="askPreset('Which methods perform database repository interactions?')">
+                  "Which methods perform database repository interactions?"
+                </button>
+                <button class="query-chip" onclick="askPreset('How are error handling and exceptions organized?')">
+                  "How are error handling and exceptions organized?"
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Input Area -->
+          <div class="chat-input-panel">
+            <div class="chat-input-box">
+              <textarea 
+                id="q" 
+                rows="1" 
+                placeholder="Ask about this Java codebase..." 
+                autocomplete="off"
+              ></textarea>
+              <button id="btn-ask" class="chat-send-btn" onclick="ask()" title="Send question">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </div>
+            <div class="chat-footer-caption">
+              <span>Grounding: Top-6 Vector Hits + Multi-hop Graph Neighbors</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Method Inspector Pane -->
+        <div class="tab-pane" id="pane-inspector">
+          <div id="inspector-empty" class="inspector-empty">
+            <div class="inspector-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+            </div>
+            <h3>No Method Selected</h3>
+            <p>Click any node circle in the call graph to view its AST signature, line numbers, caller matrix, and blast radius impact.</p>
+          </div>
+
+          <div id="inspector-content" class="inspector-content hidden">
+            <!-- Method Overview Header Card -->
+            <div class="glass-card inspector-header-card">
+              <div class="card-badge-row">
+                <span class="method-kind-badge">Java Method</span>
+                <button class="copy-pill-btn" id="btn-copy-citation" title="Copy reference citation">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  <span>Copy Citation</span>
+                </button>
+              </div>
+              <h2 class="inspector-method-name" id="insp-method-name">MethodName</h2>
+              <div class="inspector-class-path" id="insp-class-path">package.ClassName</div>
+              <div class="inspector-file-row">
+                <span class="file-icon">📄</span>
+                <span class="file-path-text" id="insp-file-path">src/main/java/...</span>
+              </div>
+              <div class="inspector-range-tag" id="insp-line-range">Lines 10 - 45</div>
+            </div>
+
+            <!-- Blast Radius Card -->
+            <div class="glass-card blast-radius-card">
+              <div class="card-title-row">
+                <div class="card-title-icon impact-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                </div>
+                <span class="card-title">Blast Radius Analysis</span>
+              </div>
+              <p class="card-desc">Transitive callers that depend on this method directly or indirectly.</p>
+              
+              <div class="blast-stat-row">
+                <div class="blast-stat">
+                  <span class="blast-number" id="insp-impact-count">0</span>
+                  <span class="blast-label">Affected Methods</span>
+                </div>
+                <button class="secondary-btn" id="btn-trigger-impact">
+                  <span>Highlight Blast Radius</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Direct Callers / Callees Lists -->
+            <div class="relations-container">
+              <div class="relations-block">
+                <h4 class="relations-title">
+                  <span>Direct Callers</span>
+                  <span class="count-badge" id="insp-callers-count">0</span>
+                </h4>
+                <div class="relations-list" id="insp-callers-list">
+                  <div class="empty-relation">No incoming callers discovered in repo</div>
+                </div>
+              </div>
+
+              <div class="relations-block">
+                <h4 class="relations-title">
+                  <span>Outgoing Calls</span>
+                  <span class="count-badge" id="insp-callees-count">0</span>
+                </h4>
+                <div class="relations-list" id="insp-callees-list">
+                  <div class="empty-relation">No outgoing method invocations</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action Button: Ask AI about this method -->
+            <div class="inspector-actions">
+              <button class="primary-btn w-full" id="btn-insp-ask">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <span>Ask AI to explain this method</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Architecture Catalog Pane -->
+        <div class="tab-pane" id="pane-catalog">
+          <div class="catalog-header">
+            <input type="text" id="catalog-filter" placeholder="Filter classes and methods..." autocomplete="off">
+          </div>
+          <div class="catalog-list" id="catalog-list">
+            <div class="catalog-empty">Index a repository to browse the class hierarchy.</div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Apple Intern Quick Guide Modal -->
+    <div id="guide-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-row">
+            <div class="modal-icon"></div>
+            <h2>Intern Quick Reference & Architecture Guide</h2>
+          </div>
+          <button class="close-modal-btn" id="btn-close-guide" title="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="guide-section">
+            <h3>How RepoChat GraphRAG Works</h3>
+            <p>
+              Traditional search relies solely on vector similarity (semantic embeddings). RepoChat augments vectors with static Abstract Syntax Tree (AST) call graphs. When you ask a question:
+            </p>
+            <ol class="guide-list">
+              <li><strong>Top Vector Hits</strong> are retrieved from pgvector based on embedding cosine similarity.</li>
+              <li><strong>Call Graph Neighborhoods</strong> (callers and callees) are traversed to capture architectural context.</li>
+              <li><strong>Citation Validation</strong> strictly ensures citations like <code>[Service.java:10-40]</code> point to existing files and line ranges.</li>
+            </ol>
+          </div>
+
+          <div class="guide-section">
+            <h3>Keyboard Shortcuts</h3>
+            <div class="shortcuts-table">
+              <div class="shortcut-row">
+                <span class="kbd-pill">⌘K / Ctrl+K</span>
+                <span>Focus graph method search</span>
+              </div>
+              <div class="shortcut-row">
+                <span class="kbd-pill">Enter</span>
+                <span>Send chat message or analyze repo URL</span>
+              </div>
+              <div class="shortcut-row">
+                <span class="kbd-pill">Esc</span>
+                <span>Clear graph selection & highlights</span>
+              </div>
+              <div class="shortcut-row">
+                <span class="kbd-pill">Scroll Wheel</span>
+                <span>Smooth zoom graph canvas</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="guide-section">
+            <h3>Visual Indicators</h3>
+            <ul class="guide-color-list">
+              <li><span class="legend-color color-node"></span> <strong>Zinc Silver (#52525b):</strong> Standard Java method node.</li>
+              <li><span class="legend-color color-query"></span> <strong>Pure White (#ffffff):</strong> Methods referenced in the active AI answer.</li>
+              <li><span class="legend-color color-impact"></span> <strong>High-Contrast Red (#ff3b30):</strong> Blast radius / transitive callers impacted by changes.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="primary-btn" id="btn-guide-dismiss">Got it</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Banner -->
+    <div id="toast" class="toast-banner hidden">
+      <span class="toast-icon" id="toast-icon">ℹ</span>
+      <span class="toast-message" id="toast-message">Notification message</span>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
