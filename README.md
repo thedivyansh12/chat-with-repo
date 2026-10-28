@@ -1,5 +1,8 @@
 ---
 title: Chat With Repo
+emoji: 💬
+colorFrom: gray
+colorTo: black
 sdk: docker
 app_port: 8080
 ---
@@ -30,4 +33,3 @@ Run from IntelliJ instead: `docker compose up db`, set env var LLM_API_KEY, run 
 
 ## API
 POST /api/index {url} · GET /api/graph/{id} · POST /api/chat {repoId, question} · GET /api/impact/{id}?method=Class.method
-
