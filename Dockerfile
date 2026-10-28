@@ -8,6 +8,7 @@ RUN mvn -q package -DskipTests
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 curl && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/target/chat-with-repo-0.1.0.jar app.jar
 ENV JAVA_TOOL_OPTIONS="-XX:+UseSerialGC -Xms64m -Xmx220m -XX:MaxMetaspaceSize=112m -XX:ReservedCodeCacheSize=48m -Xss512k"
 EXPOSE 8080
